@@ -1,0 +1,7 @@
+# Exclude Mac files
+.DS_Store
+
+# Exclude IDE files
+*.pyc
+.idea/
+__pycache__/*

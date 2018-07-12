@@ -20,7 +20,8 @@ class GameServer:
             sys.exit()
 
         # Start listening on socket
-        self.socket.listen(10)
+        self.socket.recvfrom(1024)
+        # self.socket.listen(10)
 
         if not self.host:
             self.host = "localhost"
@@ -30,11 +31,14 @@ class GameServer:
         # Run server
         try:
             while True:
-                conn, address = self.socket.accept()
-                thread = Thread(target=self.handler, args=(conn, address))
+                data, address = self.socket.recvfrom(self.port)
+
+                print(data)
+
+                thread = Thread(target=self.handler, args=(data, address))
                 thread.daemon = True
                 thread.start()
-                self.clients.append(conn)
+                # self.clients.append(conn)
 
         except KeyboardInterrupt:
             self.socket.close()
@@ -42,37 +46,39 @@ class GameServer:
         finally:
             self.socket.close()
 
-    def handler(self, c, a):
-        print("* {}:{} connected...".format(a[0], a[1]))
+    def handler(self, data, address):
+        print("* {}:{} connected...".format(address[0], address[1]))
 
         # Send welcome message
-        c.sendall(str.encode("Hello"))
+        # data.sendall(str.encode("Hello"))
 
-        while True:
-            try:
-                data = c.recv(1024)
-                message = data.decode('UTF-8')
-                message = message.replace('\n', '')
+        self.socket.sendto("ok", address)
 
-                if not data:
-                    print("* {}:{} disconnected...".format(a[0], a[1]))
-                    self.clients.remove(c)
-                    c.close()
-                    break
-
-                if len(message) <= 1:
-                    continue
-
-                # TODO: response
-
-                if message is None:
-                    c.shutdown(socket.SHUT_RDWR)
-                    break
-
-                c.sendall(str.encode("Received: {}\n".format(message)))
-
-            except socket.error as e:
-                print('Error: {}'.format(e))
+        # while True:
+        #     try:
+        #         data = c.recv(1024)
+        #         message = data.decode('UTF-8')
+        #         message = message.replace('\n', '')
+        #
+        #         if not data:
+        #             print("* {}:{} disconnected...".format(a[0], a[1]))
+        #             self.clients.remove(c)
+        #             c.close()
+        #             break
+        #
+        #         if len(message) <= 1:
+        #             continue
+        #
+        #         # TODO: response
+        #
+        #         if message is None:
+        #             c.shutdown(socket.SHUT_RDWR)
+        #             break
+        #
+        #         c.sendall(str.encode("Received: {}\n".format(message)))
+        #
+        #     except socket.error as e:
+        #         print('Error: {}'.format(e))
 
         c.close()
 

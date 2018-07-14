@@ -1,14 +1,14 @@
 import socket
 import sys
 from threading import Thread
-import re
+from utilities import safe_string
 
 
 class GameServer:
     socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     connections = []
-    clients = dict()
+    players = dict()
 
     def __init__(self, host, port):
         self.host = host
@@ -45,61 +45,68 @@ class GameServer:
         finally:
             self.socket.close()
 
-    def handler(self, c, a):
+    def handler(self, conn, a):
         print("* {}:{} connected...".format(a[0], a[1]))
 
         # Send a message asking client to identify client UUID
-        c.sendall(str.encode('identify'))
+        conn.sendall(str.encode('identify'))
 
-        client_identity = None
+        player_id = None
 
         while True:
             try:
-                data = c.recv(1024)
+                data = conn.recv(1024)
                 message = data.decode('UTF-8')
                 message = message.replace('\n', '')
 
                 if not data:
                     print("* {}:{} disconnected...".format(a[0], a[1]))
-                    self.connections.remove(c)
-                    c.close()
+
+                    # Remove from connections
+                    self.connections.remove(conn)
+
+                    # Remove from players
+                    self.players.pop(player_id, None)
+
+                    # Prepare to close connection
+                    conn.shutdown(socket.SHUT_RDWR)
                     break
 
                 if len(message) <= 1:
                     continue
 
-                # TODO: response
-
-                if message is None:
-                    c.shutdown(socket.SHUT_RDWR)
-                    break
-
-                if not client_identity:
+                # If user has not identified
+                if not player_id:
                     print("Identifying user!")
 
                     # Strip any illegal input
-                    temp_id = re.sub(r'\W+', '', message)
+                    player_id = safe_string(message)
 
-                    if len(temp_id) < 1:
+                    if len(player_id) < 1:
                         continue
 
-                    client_identity = temp_id
+                    if player_id not in self.players:
+                        # Set coordinate
+                        coordinate = "0,0,0"
+                        self.players[player_id] = {}
+                        self.players[player_id]['location'] = coordinate
+                        print("New user @ location {}".format(coordinate))
+                        conn.sendall(str.encode("{};{}".format(player_id, coordinate)))
 
-                    print("original id was {}, temp id is now {}".format(message, client_identity))
-
-                    if client_identity not in self.clients:
-                        c.sendall(str.encode("welcome new user {}\n".format(client_identity)))
-                    #     Send all locations of current players
+                    # Send all locations of current players
                     else:
-                        c.sendall(str.encode("welcome back returning user {}\n".format(client_identity)))
+                        coordinate = self.players.get(player_id, {}).get('location') or "0,0,0"
+                        print("Existing user @ location {}".format(coordinate))
+                        conn.sendall(str.encode("{};{}".format(player_id, coordinate)))
 
                 else:
-                    c.sendall(str.encode("you have an identity but i can't process your msg"))
+                    conn.sendall(str.encode("you have an identity but i can't process your msg"))
 
             except socket.error as e:
-                print('Error: {}'.format(e))
+                print("Error! {}".format(e))
+                break
 
-        c.close()
+        conn.close()
 
 
 def main():

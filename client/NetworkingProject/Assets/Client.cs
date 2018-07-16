@@ -13,7 +13,13 @@ public class Client : MonoBehaviour {
     readonly internal int port = 8080;
 
     // Create unique player ID on each initialization
-    readonly internal String playerId = Guid.NewGuid().ToString("N");
+    internal String playerId = Guid.NewGuid().ToString("N");
+
+    // Whether client and server are ready
+    internal bool isAuthenticated = false;
+
+    // Minimize redudant server requests
+    internal String lastCoordinate = "";
 
     // Convenience getter
     internal NetworkStream Stream {
@@ -22,18 +28,20 @@ public class Client : MonoBehaviour {
         }
     }
 
-	// Unity initialization.
-	void Start() {
+    // Unity initialization.
+    void Start() {
         client.NoDelay = true;
         client.BeginConnect(address, port, HandleConnect, null);
-   
+
         Debug.Log("I should have connected to the server...");
-	}
-	
-	// Unity update is called once per frame.
-	void Update() {
-        //Debug.Log("Hello world!");
-	}
+    }
+
+    // Unity update is called once per frame.
+    void Update() {
+        if (isAuthenticated) {
+            SendPlayerUpdate();
+        }
+    }
 
     // Client is reading data from server.
     internal void OnRead(IAsyncResult a) {
@@ -45,14 +53,52 @@ public class Client : MonoBehaviour {
 
         string msg = System.Text.Encoding.UTF8.GetString(buffer, 0, length);
 
-        Debug.Log(msg);
+        // Split messages
+        string[] messages = msg.Split(';');
 
-        // Server is asking us to identify
-        if (msg.Equals("identify")) {
-            Send(playerId);
+        // Handle each server message
+        foreach (string message in messages) {
+            string[] arr = message.Split(',');
+
+            // Server is requesting authentication
+            if (arr[0].Equals("auth-request")) {
+                Debug.Log("auth request control block");
+                SendAuthIdentity();
+                continue;
+            }
+
+            // Client is successfully authenticated
+            if (arr[0].Equals("auth-success")) {
+                Debug.Log("auth success control block");
+
+                if (!arr[1].Equals(playerId)) {
+                    Debug.LogWarning("Player ID sent to server was changed by server.");
+                }
+
+                double x = Double.Parse(arr[2]);
+                double y = Double.Parse(arr[3]);
+                double z = Double.Parse(arr[4]);
+
+                Debug.Log("Coordinates are " + x + ", " + y + ", " + z);
+
+                playerId = arr[1];
+                isAuthenticated = true;
+
+                continue;
+            }
+
+            // Only run further commands if authenticated
+            if (isAuthenticated) {
+                if (arr[0].Equals("update-success")) {
+                    continue;
+                }
+
+                // Handle player update
+                if (arr[0].Equals("player-update")) {
+                    Debug.Log("Player update");
+                }
+            }
         }
-
-        // ???
 
         Stream.BeginRead(buffer, 0, buffer.Length, OnRead, null);
     }
@@ -63,8 +109,24 @@ public class Client : MonoBehaviour {
         Stream.BeginRead(buffer, 0, buffer.Length, OnRead, null);
     }
 
+    // Send player ID to server
+    internal void SendAuthIdentity() {
+        SendMessage(playerId);
+    }
+
+    // Send current coordinates to server
+    internal void SendPlayerUpdate() {
+        string position = "0,0,0";
+
+        if (!position.Equals(lastCoordinate)) {
+            SendMessage("position,0,0,0");
+        }
+
+        lastCoordinate = position;
+    }
+
     // Send a message to the server.
-    internal void Send(string message) {
+    internal void SendMessage(string message) {
         byte[] b = System.Text.Encoding.UTF8.GetBytes(message);
         Stream.Write(b, 0, b.Length);
     }

@@ -1,7 +1,8 @@
 import socket
 import sys
-from threading import Thread
+from threading import Thread, Timer
 from utilities import safe_string
+from time import time, sleep
 
 
 class GameServer:
@@ -32,6 +33,10 @@ class GameServer:
 
         # Run server
         try:
+            thread = Thread(target=self.broadcasting_loop())
+            thread.daemon = True
+            thread.start()
+
             while True:
                 conn, address = self.socket.accept()
                 thread = Thread(target=self.handler, args=(conn, address))
@@ -45,11 +50,20 @@ class GameServer:
         finally:
             self.socket.close()
 
+    # Broadcast player movements to all clients
+    def broadcasting_loop(self):
+        Timer(5.0, self.broadcasting_loop).start()
+
+        print(self.players)
+
+        for connection in self.connections:
+            connection.sendall(str.encode("player-update"))
+
     def handler(self, conn, a):
         print("* {}:{} connected...".format(a[0], a[1]))
 
         # Send a message asking client to identify client UUID
-        conn.sendall(str.encode('identify'))
+        conn.sendall(str.encode('auth-request'))
 
         player_id = None
 
@@ -77,8 +91,6 @@ class GameServer:
 
                 # If user has not identified
                 if not player_id:
-                    print("Identifying user!")
-
                     # Strip any illegal input
                     player_id = safe_string(message)
 
@@ -91,16 +103,24 @@ class GameServer:
                         self.players[player_id] = {}
                         self.players[player_id]['location'] = coordinate
                         print("New user @ location {}".format(coordinate))
-                        conn.sendall(str.encode("{};{}".format(player_id, coordinate)))
+                        conn.sendall(str.encode("auth-success,{},{}".format(player_id, coordinate)))
 
                     # Send all locations of current players
                     else:
                         coordinate = self.players.get(player_id, {}).get('location') or "0,0,0"
                         print("Existing user @ location {}".format(coordinate))
-                        conn.sendall(str.encode("{};{}".format(player_id, coordinate)))
+                        conn.sendall(str.encode("auth-success,{},{}".format(player_id, coordinate)))
 
                 else:
-                    conn.sendall(str.encode("you have an identity but i can't process your msg"))
+                    messages = message.split(';')
+
+                    for msg in messages:
+                        arr = msg.split(',')
+
+                        if arr[0] == 'position':
+                            self.players[player_id]['location'] = '{},{},{}'.format(arr[1], arr[2], arr[3])
+                            print("new loc is {}".format(self.players[player_id]['location']))
+                            conn.sendall(str.encode("update-success"))
 
             except socket.error as e:
                 print("Error! {}".format(e))

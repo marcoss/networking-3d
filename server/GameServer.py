@@ -54,10 +54,16 @@ class GameServer:
     def broadcasting_loop(self):
         Timer(5.0, self.broadcasting_loop).start()
 
-        print(self.players)
+        if self.players:
+            data = "player-update,"
 
-        for connection in self.connections:
-            connection.sendall(str.encode("player-update"))
+            for player in self.players:
+                data += "{},{}".format(player, self.players[player]['location'])
+
+            print(data)
+
+            for connection in self.connections:
+                connection.sendall(str.encode(data))
 
     def handler(self, conn, a):
         print("* {}:{} connected...".format(a[0], a[1]))

@@ -2,15 +2,28 @@
 using System.Net.Sockets;
 using System;
 using UnityEngine;
+using System.Collections.Generic;
 
-public class Client : MonoBehaviour {
+public class GameManager : MonoBehaviour {
     // TCP client connection and data buffer
     readonly internal TcpClient client = new TcpClient();
     readonly internal byte[] buffer = new byte[5000];
 
+    // Pre-fab for player's car (automatically moves)
+    public GameObject prefabPlayerCar;
+
+    // Other player's cars
+    public GameObject prefabCar;
+ 
     // Connection options
     readonly internal IPAddress address = IPAddress.Parse("127.0.0.1");
     readonly internal int port = 8080;
+
+    // All players cars
+    readonly internal Dictionary<String, GameObject> players = new Dictionary<String, GameObject>();
+
+    // Current player's car
+    internal GameObject playerCar;
 
     // Create unique player ID on each initialization
     internal String playerId = Guid.NewGuid().ToString("N");
@@ -28,6 +41,24 @@ public class Client : MonoBehaviour {
         }
     }
 
+    // Queue for player spawn updates
+    internal Queue<PlayerInfo> spawnQueue = new Queue<PlayerInfo>();
+
+    // Queue for player movement updates
+    internal Queue<PlayerInfo> updateQueue = new Queue<PlayerInfo>();
+
+    // Info on a player
+    internal struct PlayerInfo {
+        public String playerId;
+        public Vector3 position;
+        //public Vector3 rotation;
+
+        public PlayerInfo(String playerId, Vector3 position) {
+            this.playerId = playerId;
+            this.position = position;
+        }
+    }
+
     // Unity initialization.
     void Start() {
         client.NoDelay = true;
@@ -39,8 +70,45 @@ public class Client : MonoBehaviour {
     // Unity update is called once per frame.
     void Update() {
         if (isAuthenticated) {
+            // Player car should be spawned
+            if (playerCar == null) {
+                playerCar = Instantiate(prefabPlayerCar, RandomizePosition(), transform.rotation);
+            }
+
+            // Pending spawns
+            while (spawnQueue.Count > 0) {
+                PlayerInfo p = spawnQueue.Dequeue();
+                GameObject obj = Instantiate(prefabCar, p.position, transform.rotation);
+                players.Add(p.playerId, obj);
+            }
+
+            while (updateQueue.Count > 0) {
+                PlayerInfo p = updateQueue.Dequeue();
+
+                // Update position
+                //players[p.playerId].transform.position = p.position;
+            }
+
+            // Send self update
             SendPlayerUpdate();
         }
+    }
+
+    internal Vector3 RandomizePosition() {
+        int x = UnityEngine.Random.Range(-5, 5);
+        int y = UnityEngine.Random.Range(-5, 5);
+
+        Vector3 position = transform.position;
+
+        position.x += x;
+        position.y += y;
+
+        return position;
+    }
+
+    // Spawn a car
+    internal void SpawnCar() {
+        //pendingSpawns++;
     }
 
     // Client is reading data from server.
@@ -72,7 +140,7 @@ public class Client : MonoBehaviour {
                 Debug.Log("auth success control block");
 
                 if (!arr[1].Equals(playerId)) {
-                    Debug.LogWarning("Player ID sent to server was changed by server.");
+                    Debug.LogWarning("Player ID created by client was changed by server.");
                 }
 
                 double x = Double.Parse(arr[2]);
@@ -80,6 +148,8 @@ public class Client : MonoBehaviour {
                 double z = Double.Parse(arr[4]);
 
                 Debug.Log("Coordinates are " + x + ", " + y + ", " + z);
+
+                SpawnCar();
 
                 playerId = arr[1];
                 isAuthenticated = true;
@@ -89,18 +159,47 @@ public class Client : MonoBehaviour {
 
             // Only run further commands if authenticated
             if (isAuthenticated) {
-                if (arr[0].Equals("update-success")) {
-                    continue;
-                }
+                // Do nothing
+                if (arr[0].Equals("update-success")) continue;
 
                 // Handle player update
                 if (arr[0].Equals("player-update")) {
-                    Debug.Log("Player update");
+                    // Update player
+                    string pid = arr[1];
+
+                    // Skip self update (may introduce lag)
+                    //if (pid.Equals(playerId)) continue;
+
+                    float x = float.Parse(arr[2]);
+                    float y = float.Parse(arr[3]);
+                    float z = float.Parse(arr[4]);
+
+                    Vector3 location = new Vector3(x, y, z);
+
+                    // Player information
+                    PlayerInfo player = new PlayerInfo(pid, location);
+
+                    if (!players.ContainsKey(pid)) {
+                        Debug.Log("New player!");
+                        spawnQueue.Enqueue(player);
+                    } else {
+                        Debug.Log("Existing player!");
+                        updateQueue.Enqueue(player);
+                    }
                 }
             }
         }
 
         Stream.BeginRead(buffer, 0, buffer.Length, OnRead, null);
+    }
+
+    public void InstantiatePlayer(string pid)
+    {
+        Debug.Log("Adding player with id: " + pid);
+
+        //GameObject player = SpawnCar();
+
+        //players.Add(pid, player);
     }
 
     // Client did finish connecting asynchronously.

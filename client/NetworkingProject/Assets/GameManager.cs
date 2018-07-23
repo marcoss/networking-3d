@@ -50,15 +50,19 @@ public class GameManager : MonoBehaviour {
     // Queue for player movement updates
     internal Queue<PlayerInfo> updateQueue = new Queue<PlayerInfo>();
 
+    // Queue for player disconnects
+    internal Queue<String> removalQueue = new Queue<String>();
+
     // Info on a player
     internal struct PlayerInfo {
         public String playerId;
         public Vector3 position;
-        //public Vector3 rotation;
+        public Vector3 rotation;
 
-        public PlayerInfo(String playerId, Vector3 position) {
+        public PlayerInfo(String playerId, Vector3 position, Vector3 rotation) {
             this.playerId = playerId;
             this.position = position;
+            this.rotation = rotation;
         }
     }
 
@@ -76,32 +80,31 @@ public class GameManager : MonoBehaviour {
     // Unity update is called once per frame.
     void Update() {
         if (isAuthenticated) {
-            // Player car should be spawned
-            if (playerCar == null) {
-                playerCar = Instantiate(prefabPlayerCar, RandomizePosition(), transform.rotation);
-            } else {
-                PLAYER_TRANSFORM = playerCar.transform;
-            }
+            // Send current update
+            HandlePlayerUpdate();
 
-            // Pending spawns
+            // Spawn queue
             while (spawnQueue.Count > 0) {
                 PlayerInfo p = spawnQueue.Dequeue();
-                GameObject obj = Instantiate(prefabCar, p.position, transform.rotation);
-                players.Add(p.playerId, obj);
+                SpawnPlayer(p);
             }
 
+            // Update queue
             while (updateQueue.Count > 0) {
                 PlayerInfo p = updateQueue.Dequeue();
-
-                // Update position
-                players[p.playerId].transform.position = p.position;
+                UpdatePlayer(p);
             }
 
-            // Send self update
-            SendPlayerUpdate();
+            // Removal queue
+            while (removalQueue.Count > 0)
+            {
+                String p = removalQueue.Dequeue();
+                RemovePlayer(p);
+            }
         }
     }
 
+    // Prevent all players from spawning on same point
     internal Vector3 RandomizePosition() {
         int x = UnityEngine.Random.Range(-5, 5);
         int z = UnityEngine.Random.Range(-5, 5);
@@ -114,12 +117,27 @@ public class GameManager : MonoBehaviour {
         return position;
     }
 
-    // Spawn a car
-    internal void SpawnCar() {
-        //pendingSpawns++;
+    // Spawn player in game
+    internal void SpawnPlayer(PlayerInfo p) {
+        GameObject obj = Instantiate(prefabCar, p.position, transform.rotation);
+        players.Add(p.playerId, obj);
     }
 
-    // Client is reading data from server.
+    // Update player in game
+    internal void UpdatePlayer(PlayerInfo p) {
+        players[p.playerId].transform.position = p.position;
+        players[p.playerId].transform.eulerAngles = p.rotation;
+    }
+
+    // Remove player from map
+    internal void RemovePlayer(string playerId) {
+        if (players.ContainsKey(playerId)) {
+            Destroy(players[playerId]);
+            players.Remove(playerId);
+        }
+    }
+
+    // Client is reading data from server
     internal void OnRead(IAsyncResult a) {
         int length = Stream.EndRead(a);
         if (length == 0) {
@@ -138,15 +156,12 @@ public class GameManager : MonoBehaviour {
 
             // Server is requesting authentication
             if (arr[0].Equals("auth-request")) {
-                Debug.Log("auth request control block");
                 SendAuthIdentity();
                 continue;
             }
 
             // Client is successfully authenticated
             if (arr[0].Equals("auth-success")) {
-                Debug.Log("auth success control block");
-
                 if (!arr[1].Equals(playerId)) {
                     Debug.LogWarning("Player ID created by client was changed by server.");
                 }
@@ -156,8 +171,6 @@ public class GameManager : MonoBehaviour {
                 double z = Double.Parse(arr[4]);
 
                 Debug.Log("Coordinates are " + x + ", " + y + ", " + z);
-
-                SpawnCar();
 
                 playerId = arr[1];
                 isAuthenticated = true;
@@ -170,6 +183,11 @@ public class GameManager : MonoBehaviour {
                 // Do nothing
                 if (arr[0].Equals("update-success")) continue;
 
+                if (arr[0].Equals("player-disconnect")) {
+                    string pid = arr[1];
+                    removalQueue.Enqueue(pid);
+                }
+
                 // Handle player update
                 if (arr[0].Equals("player-update")) {
                     // Update player
@@ -178,20 +196,26 @@ public class GameManager : MonoBehaviour {
                     // Skip self update (may introduce lag)
                     if (pid.Equals(playerId)) continue;
 
-                    float x = float.Parse(arr[2]);
-                    float y = float.Parse(arr[3]);
-                    float z = float.Parse(arr[4]);
+                    // Position coords
+                    float px = float.Parse(arr[2]);
+                    float py = float.Parse(arr[3]);
+                    float pz = float.Parse(arr[4]);
 
-                    Vector3 location = new Vector3(x, y, z);
+                    // Rotation coords
+                    float rx = float.Parse(arr[5]);
+                    float ry = float.Parse(arr[6]);
+                    float rz = float.Parse(arr[7]);
+
+                    Vector3 location = new Vector3(px, py, pz);
+                    Vector3 rotation = new Vector3(rx, ry, rz);
 
                     // Player information
-                    PlayerInfo player = new PlayerInfo(pid, location);
+                    PlayerInfo player = new PlayerInfo(pid, location, rotation);
 
                     if (!players.ContainsKey(pid)) {
                         Debug.Log("New player!");
                         spawnQueue.Enqueue(player);
                     } else {
-                        Debug.Log("Existing player!");
                         updateQueue.Enqueue(player);
                     }
                 }
@@ -201,18 +225,8 @@ public class GameManager : MonoBehaviour {
         Stream.BeginRead(buffer, 0, buffer.Length, OnRead, null);
     }
 
-    public void InstantiatePlayer(string pid)
-    {
-        Debug.Log("Adding player with id: " + pid);
-
-        //GameObject player = SpawnCar();
-
-        //players.Add(pid, player);
-    }
-
     // Client did finish connecting asynchronously.
     internal void HandleConnect(IAsyncResult a) {
-        Debug.Log("I finished connecting!");
         Stream.BeginRead(buffer, 0, buffer.Length, OnRead, null);
     }
 
@@ -222,11 +236,20 @@ public class GameManager : MonoBehaviour {
     }
 
     // Send current coordinates to server
-    internal void SendPlayerUpdate() {
+    internal void HandlePlayerUpdate() {
+        if (playerCar == null) {
+            playerCar = Instantiate(prefabPlayerCar, RandomizePosition(), transform.rotation);
+        }
+        else {
+            PLAYER_TRANSFORM = playerCar.transform;
+        }
+
         string position = PLAYER_TRANSFORM.position.x + "," + PLAYER_TRANSFORM.position.y + "," + PLAYER_TRANSFORM.position.z;
 
+        string rotation = PLAYER_TRANSFORM.eulerAngles.x + "," + PLAYER_TRANSFORM.eulerAngles.y + "," + PLAYER_TRANSFORM.eulerAngles.z;
+
         if (!position.Equals(lastCoordinate)) {
-            SendMessage("position," + position);
+            SendMessage("position," + position + ",rotation," + rotation);
         }
 
         lastCoordinate = position;

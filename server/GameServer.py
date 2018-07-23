@@ -9,6 +9,10 @@ class GameServer:
     socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     connections = []
+
+    # Store disconnecting players
+    disconnections = []
+
     players = dict()
 
     def __init__(self, host, port):
@@ -52,13 +56,25 @@ class GameServer:
 
     # Broadcast player movements to all clients
     def broadcasting_loop(self):
-        Timer(5.0, self.broadcasting_loop).start()
+        Timer(1.0, self.broadcasting_loop).start()
 
         if self.players:
-            data = "player-update,"
+            data = ''
 
+            # Send player updates
             for player in self.players:
-                data += "{},{}".format(player, self.players[player]['location'])
+                data += "player-update,{},{};".format(player, self.players[player]['location'])
+
+            for connection in self.connections:
+                connection.sendall(str.encode(data))
+
+        # Send disconnections
+        if self.disconnections:
+            data = ''
+
+            for player_id in self.disconnections:
+                data += "player-disconnect,{};".format(player_id)
+                self.disconnections.remove(player_id)
 
             print(data)
 
@@ -88,6 +104,8 @@ class GameServer:
                     # Remove from players
                     self.players.pop(player_id, None)
 
+                    self.disconnections.append(player_id)
+
                     # Prepare to close connection
                     conn.shutdown(socket.SHUT_RDWR)
                     break
@@ -105,7 +123,7 @@ class GameServer:
 
                     if player_id not in self.players:
                         # Set coordinate
-                        coordinate = "0.0,0.0,0.0"
+                        coordinate = "0.0,0.0,0.0,0.0,180.0,0.0"
                         self.players[player_id] = {}
                         self.players[player_id]['location'] = coordinate
                         print("New user @ location {}".format(coordinate))
@@ -113,7 +131,7 @@ class GameServer:
 
                     # Send all locations of current players
                     else:
-                        coordinate = self.players.get(player_id, {}).get('location') or "0.0,0.0,0.0"
+                        coordinate = self.players.get(player_id, {}).get('location') or "0.0,0.0,0.0,0.0,180.0,0.0"
                         print("Existing user @ location {}".format(coordinate))
                         conn.sendall(str.encode("auth-success,{},{}".format(player_id, coordinate)))
 
@@ -124,8 +142,17 @@ class GameServer:
                         arr = msg.split(',')
 
                         if arr[0] == 'position':
-                            self.players[player_id]['location'] = '{},{},{}'.format(float(arr[1]), float(arr[2]), float(arr[3]))
-                            print("Updated location => {}".format(self.players[player_id]['location']))
+                            # Position
+                            rx = float(arr[1])
+                            ry = float(arr[2])
+                            rz = float(arr[3])
+
+                            # Rotation
+                            px = float(arr[5])
+                            py = float(arr[6])
+                            pz = float(arr[7])
+
+                            self.players[player_id]['location'] = '{},{},{},{},{},{}'.format(rx, ry, rz, px, py, pz)
                             conn.sendall(str.encode("update-success"))
 
             except socket.error as e:

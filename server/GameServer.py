@@ -2,16 +2,19 @@ import socket
 import sys
 from threading import Thread, Timer
 from utilities import safe_string
-from time import time, sleep
 
 
 class GameServer:
     socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+    # Store list of connections
     connections = []
 
     # Store disconnecting players
     disconnections = []
+
+    # Chat messages
+    chat = []
 
     players = dict()
 
@@ -23,6 +26,7 @@ class GameServer:
         # Bind socket to local host and port
         try:
             self.socket.bind((self.host, self.port))
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         except socket.error as err:
             print("Error binding to server: {}".format(err))
             sys.exit()
@@ -77,6 +81,16 @@ class GameServer:
                 self.disconnections.remove(player_id)
 
             print(data)
+
+            for connection in self.connections:
+                connection.sendall(str.encode(data))
+
+        if self.chat:
+            data = ''
+
+            for msg in self.chat:
+                data += "player-chat,{};".format(msg)
+                self.chat.remove(msg)
 
             for connection in self.connections:
                 connection.sendall(str.encode(data))
@@ -141,6 +155,11 @@ class GameServer:
                     for msg in messages:
                         arr = msg.split(',')
 
+                        # Handle chat message
+                        if arr[0] == 'chat':
+                            self.chat.append(player_id[:5] + ": " + arr[1] + ";")
+
+                        # Handle position update
                         if arr[0] == 'position':
                             # Position
                             rx = float(arr[1])
@@ -152,7 +171,7 @@ class GameServer:
                             py = float(arr[6])
                             pz = float(arr[7])
 
-                            self.players[player_id]['location'] = '{},{},{},{},{},{}'.format(rx, ry, rz, px, py, pz)
+                            self.players[player_id]['location'] = '{},{},{},{},{},{};'.format(rx, ry, rz, px, py, pz)
                             conn.sendall(str.encode("update-success"))
 
             except socket.error as e:

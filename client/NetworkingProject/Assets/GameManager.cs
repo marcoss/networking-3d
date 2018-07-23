@@ -3,8 +3,19 @@ using System.Net.Sockets;
 using System;
 using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine.UI;
+
+[System.Serializable]
+public class Message {
+    public string text;
+    public Text textObject;
+}
 
 public class GameManager : MonoBehaviour {
+    // Chat messages
+    [SerializeField]
+    List<Message> chatMessages = new List<Message>();
+
     // Static var to hold player location
     static public Transform PLAYER_TRANSFORM;
 
@@ -17,7 +28,11 @@ public class GameManager : MonoBehaviour {
 
     // Other player's cars
     public GameObject prefabCar;
- 
+
+    // Chat UI
+    public GameObject chatPanel, textObject;
+    public InputField chatBox;
+
     // Connection options
     readonly internal IPAddress address = IPAddress.Parse("127.0.0.1");
     readonly internal int port = 8080;
@@ -53,6 +68,9 @@ public class GameManager : MonoBehaviour {
     // Queue for player disconnects
     internal Queue<String> removalQueue = new Queue<String>();
 
+    // Message queue
+    internal Queue<String> messageQueue = new Queue<String>();
+
     // Info on a player
     internal struct PlayerInfo {
         public String playerId;
@@ -83,6 +101,11 @@ public class GameManager : MonoBehaviour {
             // Send current update
             HandlePlayerUpdate();
 
+            if (chatBox.text != "" && Input.GetKeyDown(KeyCode.Return)) {
+                SendMessage("chat," + chatBox.text);
+                chatBox.text = "";
+            }
+
             // Spawn queue
             while (spawnQueue.Count > 0) {
                 PlayerInfo p = spawnQueue.Dequeue();
@@ -100,6 +123,13 @@ public class GameManager : MonoBehaviour {
             {
                 String p = removalQueue.Dequeue();
                 RemovePlayer(p);
+            }
+
+            // Removal queue
+            while (messageQueue.Count > 0)
+            {
+                String msg = messageQueue.Dequeue();
+                AddChatMessage(msg);
             }
         }
     }
@@ -188,6 +218,11 @@ public class GameManager : MonoBehaviour {
                     removalQueue.Enqueue(pid);
                 }
 
+                if (arr[0].Equals("player-chat")) {
+                    string chatMessage = arr[1];
+                    messageQueue.Enqueue(chatMessage);
+                }
+
                 // Handle player update
                 if (arr[0].Equals("player-update")) {
                     // Update player
@@ -249,7 +284,7 @@ public class GameManager : MonoBehaviour {
         string rotation = PLAYER_TRANSFORM.eulerAngles.x + "," + PLAYER_TRANSFORM.eulerAngles.y + "," + PLAYER_TRANSFORM.eulerAngles.z;
 
         if (!position.Equals(lastCoordinate)) {
-            SendMessage("position," + position + ",rotation," + rotation);
+            SendMessage("position," + position + ",rotation," + rotation + ";");
         }
 
         lastCoordinate = position;
@@ -265,5 +300,22 @@ public class GameManager : MonoBehaviour {
     private void OnApplicationQuit() {
         Debug.Log("I am quitting...");
         client.Close();
+    }
+
+    internal void AddChatMessage(string message) {
+        if (chatMessages.Count > 20) {
+            Message tmp = chatMessages[0];
+            Destroy(tmp.textObject);
+            chatMessages.Remove(tmp);
+        }
+
+        GameObject textObj = Instantiate(textObject, chatPanel.transform);
+
+        Message msg = new Message();
+        msg.text = message;
+        msg.textObject = textObj.GetComponent<Text>();
+        msg.textObject.text = message;
+
+        chatMessages.Add(msg);
     }
 }

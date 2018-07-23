@@ -5,6 +5,9 @@ using UnityEngine;
 using System.Collections.Generic;
 
 public class GameManager : MonoBehaviour {
+    // Static var to hold player location
+    static public Transform PLAYER_TRANSFORM;
+
     // TCP client connection and data buffer
     readonly internal TcpClient client = new TcpClient();
     readonly internal byte[] buffer = new byte[5000];
@@ -64,6 +67,9 @@ public class GameManager : MonoBehaviour {
         client.NoDelay = true;
         client.BeginConnect(address, port, HandleConnect, null);
 
+        // Init
+        PLAYER_TRANSFORM = transform;
+
         Debug.Log("I should have connected to the server...");
     }
 
@@ -73,6 +79,8 @@ public class GameManager : MonoBehaviour {
             // Player car should be spawned
             if (playerCar == null) {
                 playerCar = Instantiate(prefabPlayerCar, RandomizePosition(), transform.rotation);
+            } else {
+                PLAYER_TRANSFORM = playerCar.transform;
             }
 
             // Pending spawns
@@ -86,7 +94,7 @@ public class GameManager : MonoBehaviour {
                 PlayerInfo p = updateQueue.Dequeue();
 
                 // Update position
-                //players[p.playerId].transform.position = p.position;
+                players[p.playerId].transform.position = p.position;
             }
 
             // Send self update
@@ -96,12 +104,12 @@ public class GameManager : MonoBehaviour {
 
     internal Vector3 RandomizePosition() {
         int x = UnityEngine.Random.Range(-5, 5);
-        int y = UnityEngine.Random.Range(-5, 5);
+        int z = UnityEngine.Random.Range(-5, 5);
 
         Vector3 position = transform.position;
 
         position.x += x;
-        position.y += y;
+        position.z += z;
 
         return position;
     }
@@ -168,7 +176,7 @@ public class GameManager : MonoBehaviour {
                     string pid = arr[1];
 
                     // Skip self update (may introduce lag)
-                    //if (pid.Equals(playerId)) continue;
+                    if (pid.Equals(playerId)) continue;
 
                     float x = float.Parse(arr[2]);
                     float y = float.Parse(arr[3]);
@@ -215,10 +223,10 @@ public class GameManager : MonoBehaviour {
 
     // Send current coordinates to server
     internal void SendPlayerUpdate() {
-        string position = "0,0,0";
+        string position = PLAYER_TRANSFORM.position.x + "," + PLAYER_TRANSFORM.position.y + "," + PLAYER_TRANSFORM.position.z;
 
         if (!position.Equals(lastCoordinate)) {
-            SendMessage("position,0,0,0");
+            SendMessage("position," + position);
         }
 
         lastCoordinate = position;

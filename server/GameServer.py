@@ -105,7 +105,7 @@ class GameServer:
 
                     if player_id not in self.players:
                         # Set coordinate
-                        coordinate = "0,0,0"
+                        coordinate = "0.0,0.0,0.0"
                         self.players[player_id] = {}
                         self.players[player_id]['location'] = coordinate
                         print("New user @ location {}".format(coordinate))
@@ -113,7 +113,7 @@ class GameServer:
 
                     # Send all locations of current players
                     else:
-                        coordinate = self.players.get(player_id, {}).get('location') or "0,0,0"
+                        coordinate = self.players.get(player_id, {}).get('location') or "0.0,0.0,0.0"
                         print("Existing user @ location {}".format(coordinate))
                         conn.sendall(str.encode("auth-success,{},{}".format(player_id, coordinate)))
 
@@ -124,8 +124,8 @@ class GameServer:
                         arr = msg.split(',')
 
                         if arr[0] == 'position':
-                            self.players[player_id]['location'] = '{},{},{}'.format(arr[1], arr[2], arr[3])
-                            print("new loc is {}".format(self.players[player_id]['location']))
+                            self.players[player_id]['location'] = '{},{},{}'.format(float(arr[1]), float(arr[2]), float(arr[3]))
+                            print("Updated location => {}".format(self.players[player_id]['location']))
                             conn.sendall(str.encode("update-success"))
 
             except socket.error as e:

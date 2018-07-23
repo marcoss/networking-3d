@@ -77,10 +77,9 @@ class GameServer:
             data = ''
 
             for player_id in self.disconnections:
+                print("* Player " + player_id + " disconnected from server")
                 data += "player-disconnect,{};".format(player_id)
                 self.disconnections.remove(player_id)
-
-            print(data)
 
             for connection in self.connections:
                 connection.sendall(str.encode(data))
@@ -140,13 +139,11 @@ class GameServer:
                         coordinate = "0.0,0.0,0.0,0.0,180.0,0.0"
                         self.players[player_id] = {}
                         self.players[player_id]['location'] = coordinate
-                        print("New user @ location {}".format(coordinate))
                         conn.sendall(str.encode("auth-success,{},{}".format(player_id, coordinate)))
 
                     # Send all locations of current players
                     else:
                         coordinate = self.players.get(player_id, {}).get('location') or "0.0,0.0,0.0,0.0,180.0,0.0"
-                        print("Existing user @ location {}".format(coordinate))
                         conn.sendall(str.encode("auth-success,{},{}".format(player_id, coordinate)))
 
                 else:
@@ -175,7 +172,7 @@ class GameServer:
                             conn.sendall(str.encode("update-success"))
 
             except socket.error as e:
-                print("Error! {}".format(e))
+                # print("Error! {}".format(e))
                 break
 
         conn.close()

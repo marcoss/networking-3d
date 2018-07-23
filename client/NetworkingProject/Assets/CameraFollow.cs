@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class CameraFollow : MonoBehaviour {
     public float distance = 7.0f;
-    public float height = 3.0f;
+    public float height = 2.5f;
     public float damping = 5.0f;
     public bool followBehind = true;
     public float rotationDamping = 100.0f;
